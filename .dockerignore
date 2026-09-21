@@ -1,0 +1,7 @@
+# Build context for .devcontainer/Dockerfile. The image only needs Project.toml,
+# Manifest.toml and setup/, so keep everything else out: the rendered Quarto
+# slides alone are about 29 MB.
+*
+!Project.toml
+!Manifest.toml
+!setup

@@ -1,0 +1,31 @@
+{
+  "name": "DynOpt2026",
+  "image": "ghcr.io/dscardoso/dynopt2026:2026-09-21",
+  "remoteUser": "vscode",
+  "containerEnv": {
+    "GKSwstype": "100"
+  },
+  "hostRequirements": {
+    "cpus": 2,
+    "memory": "4gb",
+    "storage": "32gb"
+  },
+  "postCreateCommand": "julia --project=. -e 'using Pkg; Pkg.instantiate()'",
+  "waitFor": "postCreateCommand",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "julialang.language-julia"
+      ],
+      "settings": {
+        "julia.executablePath": "/usr/local/bin/julia",
+        "julia.environmentPath": "${containerWorkspaceFolder}",
+        "julia.enableTelemetry": false,
+        "julia.symbolCacheDownload": true,
+        "julia.NumThreads": 1,
+        "files.autoSave": "afterDelay",
+        "terminal.integrated.defaultProfile.linux": "bash"
+      }
+    }
+  }
+}

@@ -1,0 +1,661 @@
+---
+title: "Dynamic Optimization with Open-Source Tools"
+subtitle: "Session 1: Julia, optimization, and a static reservoir"
+author: "Diego S. Cardoso"
+institute: "University of Illinois Urbana-Champaign"
+engine: julia
+julia:
+  exeflags: ["--project=@."]
+execute:
+  echo: true
+  cache: true
+editor:
+  render-on-save: false
+format:
+  revealjs:
+    output-file: DYNOPT_1_slides.html
+    theme: [white, ./../dynopt_style.css]
+    slide-number: c
+    show-slide-number: all
+    code-block-bg: true
+    code-block-border-left: "#31BAE9"
+    code-copy: hover
+    fig-width: 8
+    fig-height: 4
+    chalkboard:
+      theme: whiteboard
+      chalk-effect: 0.1
+  html:
+    output-file: DYNOPT_1_notes.html
+    toc: false
+    number-sections: true
+    code-fold: true
+    html-math-method: katex
+---
+
+```{julia}
+#| output: false
+#| echo: false
+# Hidden setup: load packages and pay the first-solve cost so no slide shows a banner.
+using JuMP, Ipopt, Optim, Plots
+let m = Model(Ipopt.Optimizer)
+    set_silent(m)
+    @variable(m, 0 <= q <= 1)
+    @objective(m, Max, q - q^2)
+    optimize!(m)
+end
+```
+
+## Workshop roadmap {background-color="orange"}
+
+1. **Julia, optimization, and a static reservoir**
+2. The Bellman equation on a discrete state
+3. Continuous state: finite and infinite horizon
+
+## Before we start {background-color="orange"}
+
+- Everything runs in the GitHub Codespace you opened before today
+- If `setup/smoke_test.jl` did not pass, say so in the chat now
+
+. . .
+
+- Files for today, in the `exercises/` folder
+  - `s1_warmup.jl`: run along with the first part, nothing to fill in
+  - `s1_inclass.jl`: four blanks that we fill together
+  - `s1_homework.jl`: take it further, solutions are in `solutions/`
+
+## Agenda {background-color="orange"}
+
+1. Julia by translation, for people who already program
+2. One reservoir, one season: a static optimization problem
+3. Break
+4. What the static model says and what it misses
+
+## Sources {background-color="orange"}
+
+- Miranda and Fackler, *Applied Computational Economics and Finance*, Chapter 7, for the calibration
+- JuMP documentation: [Getting started with Julia](https://jump.dev/JuMP.jl/stable/tutorials/getting_started/getting_started_with_julia/#Getting-started-with-Julia) and [Getting started with JuMP](https://jump.dev/JuMP.jl/stable/tutorials/getting_started/getting_started_with_JuMP/#Getting-started-with-JuMP)
+- [Julia documentation](https://docs.julialang.org/)
+
+# 1. Julia by translation
+
+## What this part is not
+
+This part will teach you to program
+
+. . .
+
+Hopefully, you already program in R, Python, Matlab, or Stata. Julia will feel familiar for a day and then surprise you in a couple of places
+
+. . .
+
+We will focus on those places today
+
+## Running code
+
+Open `exercises/s1_warmup.jl` in the Codespace
+
+- Put the cursor on a line, press **Shift+Enter**: the line runs in the Julia REPL
+- Select a block, Shift+Enter: the block runs
+- The whole file: `include("exercises/s1_warmup.jl")`
+
+. . .
+
+The first call to anything is slow because Julia compiles on first use. But the second call is fast
+
+## Numbers
+
+```{julia}
+7 / 2
+```
+
+```{julia}
+typeof(1), typeof(1.0)
+```
+
+. . .
+
+Division with one integer and one float always returns a float. Integers and floats are different types and Julia keeps track
+
+## Floating point is not real arithmetic
+
+```{julia}
+0.1 * 3 == 0.3
+```
+
+. . .
+
+```{julia}
+0.1 * 3 ≈ 0.3
+```
+
+Type `\approx` then Tab. Or spell it out with a tolerance:
+
+```{julia}
+isapprox(0.1 * 3, 0.3; atol = 1e-12)
+```
+
+. . .
+
+We will use this later today to decide whether a solver got the right answer
+
+## Vectors
+
+```{julia}
+v = [1.0, 2.0, 3.0]
+v[1], v[end], length(v)
+```
+
+. . .
+
+Julia counts from **1**, like R and Matlab, unlike Python
+
+```{julia}
+zeros(5)
+```
+
+## Matrices
+
+```{julia}
+A = [1.0 2.0; 3.0 4.0]
+```
+
+Spaces separate columns, `;` separates rows
+
+. . .
+
+```{julia}
+A[2, 1], A * v[1:2], A'
+```
+
+
+## Functions: two ways
+
+```{julia}
+function benefit(x)
+    return 14 * x^0.8
+end
+benefit(2.0)
+```
+
+. . .
+
+```{julia}
+benefit_short(x) = 14 * x^0.8
+benefit_short(2.0)
+```
+
+We will use the one-line form for economic functions like $F(x)$ and $U(z)$
+
+## Functions: keyword arguments
+
+You can set optional arguments with keywords and default values. The caller can override them in any order
+```{julia}
+function benefit_kw(x; scale = 14.0, curvature = 0.8)
+    return scale * x^curvature
+end
+benefit_kw(2.0)
+```
+
+. . .
+
+```{julia}
+benefit_kw(2.0; curvature = 0.5)
+```
+
+## Functions: returning two numbers
+
+```{julia}
+function split_water(s, share)
+    x = share * s
+    z = s - x
+    return x, z
+end
+irrigation, recreation = split_water(4.0, 0.9)
+```
+
+. . .
+
+`return x, z` hands back both. `a, b = f(...)` unpacks them. This is how every solver function in the workshop reports its answer
+
+## Anonymous functions
+
+```{julia}
+negative_benefit = x -> -benefit(x)
+negative_benefit(2.0)
+```
+
+. . .
+
+`x -> ...` defines a function on the spot
+
+. . .
+
+We need this because an optimizer takes a **function** as its input, and often we don't want to name it because we will use it only once
+
+## Loops
+
+```{julia}
+for i in 1:3
+    println("year ", i)
+end
+```
+
+. . .
+
+Loops are very fast in Julia. You do not vectorize to gain speed (like in R or Python). Write the loop you would write on paper
+
+## Preallocate, then fill
+
+```{julia}
+function benefits_on_grid(n)
+    results = zeros(n)
+    for i in 1:n
+        results[i] = benefit(i)
+    end
+    return results
+end
+benefits_on_grid(5)
+```
+
+. . .
+
+This is the **only** data pattern the workshop uses. Make a vector of zeros, fill it in a loop, return it
+
+There are more advanced ways to do this, but we'll stick to simple and fast
+
+## `if`
+
+```{julia}
+function describe(s)
+    if s < 5
+        return "low"
+    elseif s < 20
+        return "medium"
+    else
+        return "high"
+    end
+end
+describe(4.0)
+```
+
+## Be careful with variable scope 
+
+```{julia}
+#| eval: false
+last_year = 0
+for i in 1:3
+    last_year = i
+end
+println("last_year after the loop = ", last_year)
+```
+
+. . .
+
+Run these lines one at a time in the REPL and you get `3`
+
+. . .
+
+Run the file with `include()` and you get
+
+```
+Warning: Assignment to `last_year` in soft scope is ambiguous ...
+last_year after the loop = 0
+```
+
+## Be careful with variable scope 
+
+Inside a file, a loop at the top level **cannot assign** to a variable defined outside it. It quietly makes a new one that dies with the loop, and the warning scrolls past
+
+. . .
+
+If the loop also *reads* the variable, `total = total + i`, the file version stops with `UndefVarError` instead. Same cause
+
+. . .
+
+To fix this, **place every loop inside a function**
+
+```{julia}
+function sum_to(n)
+    total = 0.0
+    for i in 1:n
+        total = total + i
+    end
+    return total
+end
+sum_to(3)
+```
+
+## Broadcasting
+
+```{julia}
+x_values = [1.0, 2.0, 3.0]
+benefit.(x_values)
+```
+
+. . .
+
+The dot says: apply `benefit` to each element
+
+. . .
+
+```{julia}
+x_values .+ 1.0
+```
+
+Without the dot, `benefit(x_values)` and `x_values + 1.0` are errors. Julia will not guess what you meant by a function of a vector
+
+## Greek letters
+
+Type `\alpha` then Tab
+
+```{julia}
+α_1 = 14.0
+β_1 = 0.8
+F(x) = α_1 * x^β_1
+F(2.0)
+```
+
+. . .
+
+But you should write subscripts with an underscore, `α_1`, not with a Unicode subscript glyph. The glyph is unreadable in half the editors you will meet
+
+## Plots (the bare minimum)
+
+```{julia}
+using Plots
+x_grid = 0.1:0.1:4.0
+plot(x_grid, F.(x_grid); xlabel = "x", ylabel = "benefit", label = "farmers")
+plot!(x_grid, 10 .* x_grid .^ 0.4; label = "recreation")
+vline!([2.0]; linestyle = :dash, label = false)
+```
+
+`plot` starts a figure, `plot!` adds to it, `savefig("name.png")` saves it
+
+## You now know enough Julia for this workshop
+
+- Numbers, `≈`, vectors, matrices
+- Functions, keywords, two return values, `x -> ...`
+- Loops in functions, preallocate and fill, `if`
+- Broadcasting with a dot
+- `α_1`, and `plot`, `plot!`, `vline!`
+
+. . .
+
+Everything from here on is economics and one modeling language
+
+# 2. One reservoir, one season
+
+## The setting
+
+One reservoir. It holds $s = 4$ units of water this season
+
+. . .
+
+- In spring, release $x$ units for irrigation. Farmers receive $F(x)$
+- Over the summer the reservoir holds $s - x$. Recreational users receive $U(s - x)$
+- Then the season ends. **There is no tomorrow** (in the model). We'll relax this next week
+
+## The model
+
+$$
+\max_{0 \le x \le 4} \; F(x) + U(4 - x), \qquad F(x) = \alpha_1 x^{\beta_1}, \quad U(z) = \alpha_2 z^{\beta_2}
+$$
+
+| | |
+|---|---|
+| $\alpha_1 = 14$, $\beta_1 = 0.8$ | farmers |
+| $\alpha_2 = 10$, $\beta_2 = 0.4$ | recreation |
+
+. . .
+
+- Both benefits are increasing and concave, and both marginal benefits blow up at zero, so the answer is interior
+- First-order condition: $F'(x) = U'(4 - x)$
+
+. . .
+
+[*The calibration is based on Miranda and Fackler, Chapter 7.]{.small_text}
+
+## Open `s1_inclass.jl`
+
+```{julia}
+#| output: false
+α_1 = 14.0;  β_1 = 0.8
+α_2 = 10.0;  β_2 = 0.4
+s_bar = 4.0
+F(x)  = α_1 * x^β_1
+U(z)  = α_2 * z^β_2
+dF(x) = α_1 * β_1 * x^(β_1 - 1)
+dU(z) = α_2 * β_2 * z^(β_2 - 1)
+```
+
+. . .
+
+The setup block is given. Blanks start after it
+
+## Look before you solve
+
+```{julia}
+W(x) = F(x) + U(s_bar - x)
+x_grid = 0.01:0.01:3.99
+plot(x_grid, W.(x_grid); xlabel = "x, released for irrigation", ylabel = "F(x) + U(4 - x)", label = false)
+```
+
+## Way 1: a one-line optimizer
+
+`Optim.optimize(f, a, b)` **minimizes** `f` on `[a, b]`. We want a maximum, so hand it $-W$
+
+. . .
+
+```{julia}
+result  = optimize(x -> -W(x), 0.0, s_bar)
+x_optim = Optim.minimizer(result)
+```
+
+. . .
+
+That is blank 1. One line, and it needs the anonymous function from earlier
+
+[*This calls a specific solution algorithm: a Box constrained gradient descent. `Optim` offers many more, but we don't have time to discuss them here. Miranda and Fackler covers the main ones.]{.small_text}
+
+## Way 2: a modeling language
+
+**JuMP** lets you write an optimization problem the way you write it on paper: variables, constraints, an objective
+
+. . .
+
+A **solver** is the separate program that finds the answer. Today: **Ipopt**, open source, for smooth nonlinear problems
+
+. . .
+
+JuMP hands the problem to the solver and hands the answer back. Change one line and the same model goes to a different solver
+
+## Way 2: the model, side by side
+
+::: {.columns}
+::: {.column width="45%"}
+$$
+\begin{aligned}
+\max_{x} \;& \alpha_1 x^{\beta_1} + \alpha_2 (4 - x)^{\beta_2} \\
+\text{s.t. } & 0 \le x \le 4
+\end{aligned}
+$$
+:::
+::: {.column width="55%"}
+```{julia}
+#| output: false
+#| code-line-numbers: "|1-2|3|4"
+model = Model(Ipopt.Optimizer)
+set_silent(model)
+@variable(model, 0 <= x <= s_bar, start = s_bar / 2)
+@objective(model, Max, α_1 * x^β_1 + α_2 * (s_bar - x)^β_2)
+```
+:::
+:::
+
+. . .
+
+- Line 3 is a **variable with bounds**. Line 4 is the objective, typed as math
+- `start` is where Ipopt begins searching. Interior is safest
+- Those two lines are blank 2
+
+## Way 2: look at what you wrote
+
+```{julia}
+print(model)
+```
+
+. . .
+
+Then solve, check, and read
+
+```{julia}
+optimize!(model)
+@assert is_solved_and_feasible(model)
+x_jump = value(x)
+```
+
+. . .
+
+Never call `value` before checking the solve succeeded. `termination_status(model)` tells you why it stopped:
+
+```{julia}
+termination_status(model)
+```
+
+## Verify, do not memorize
+
+Blank 3. At the optimum $F'(x) = U'(4 - x)$. So compute the difference
+
+```{julia}
+residual = dF(x_jump) - dU(s_bar - x_jump)
+```
+
+. . .
+
+Computationally zero (up to the solver's tolerance). This is how you should check if you have an actual solution
+
+. . .
+
+```{julia}
+isapprox(x_optim, x_jump; atol = 1e-6)
+```
+
+Two methods, one solution
+
+## What the answer says
+
+```{julia}
+#| echo: false
+println("x*              = ", round(x_jump, digits = 4))
+println("share irrigated = ", round(100 * x_jump / s_bar, digits = 2), "%")
+println("W*              = ", round(W(x_jump), digits = 4))
+println("all irrigation  = ", round(F(s_bar), digits = 4))
+println("all recreation  = ", round(U(s_bar), digits = 4))
+```
+
+. . .
+
+- The planner irrigates 93% of the water
+- The optimum beats "irrigate everything" by about 8.5%. Small but honest (this is a stylized model with one season)
+- The interesting part is what changes when the season is not the end of the world
+
+## Break {background-color="orange"}
+
+Eight minutes
+
+# 3. What the static model says and what it misses
+
+## Wrap it in a function
+
+```{julia}
+function solve_static(s)
+    model = Model(Ipopt.Optimizer)
+    set_silent(model)
+    @variable(model, 0 <= x <= s, start = s / 2)
+    @objective(model, Max, α_1 * x^β_1 + α_2 * (s - x)^β_2)
+    optimize!(model)
+    @assert is_solved_and_feasible(model)
+    x_opt = value(x)
+    return x_opt, s - x_opt, F(x_opt) + U(s - x_opt)
+end
+solve_static(4.0)
+```
+
+Same code from before, but now `s` is an argument and three numbers are returned: the irrigation, the recreation, and the total benefit 
+
+## How does the optimum change with the reservoir level?
+
+Blank 4. Preallocate three vectors, solve at each `s`, store the three results
+
+```{julia}
+function static_paths(s_grid)
+    n = length(s_grid)
+    x_path = zeros(n); z_path = zeros(n); W_path = zeros(n)
+    for i in 1:n
+        x_path[i], z_path[i], W_path[i] = solve_static(s_grid[i])
+    end
+    return x_path, z_path, W_path
+end
+s_grid = 1.0:0.5:30.0
+x_path, z_path, W_path = static_paths(s_grid);
+```
+
+## The static planner always drains the reservoir
+
+```{julia}
+share = 100 .* x_path ./ s_grid
+plot(s_grid, share; xlabel = "s, water in the reservoir", ylabel = "% released for irrigation", label = false, ylims = (80, 100))
+```
+
+. . .
+
+From 83% at one unit of water to 98% at a full reservoir. The more water there is, the more it goes to irrigation
+
+## Why?
+
+Nothing in the objective values water **tomorrow**
+
+. . .
+
+$$
+\text{static:}\qquad F'(x) = U'(s - x)
+$$
+
+. . .
+
+$$
+\text{dynamic:}\qquad F'(x_t) = U'(s_t - x_t) + \color{#c22}{\delta \, \lambda_{t+1}}
+$$
+
+. . .
+
+$\lambda_{t+1}$ is the value of one more unit of water in the reservoir next year. The static problem sets it to zero
+
+## How big is the missing term?
+
+Next session we compute it. Here is the answer calculated at the level where the reservoir settles in the long run:
+
+$$
+\lambda = \underbrace{0.975}_{\text{recreation now}} + \underbrace{8.775}_{\delta \, \lambda_{\text{next year}}} = 9.750
+$$
+
+. . .
+
+Ninety percent of what the water is worth is missing from today's problem! That's the reason the static planner drains the reservoir.
+
+In the next two weeks, we'll cover how to add it to the model and solve it
+
+## Take it further {background-color="orange"}
+
+`exercises/s1_homework.jl`, solutions in `solutions/`
+
+1. **Who gets what.** At $s = 4$, walk $x$ across $(0, 4)$ and plot $F(x)$, $U(4 - x)$ and their sum with vertical lines at $0$, $x^*$ and $4$. Read off each party's gain and loss as you move away from the optimum
+2. **Scarcity changes the stakes.** Redo it at $s = 1$ and $s = 30$. The optimum beats all-irrigation by 21% at $s = 1$ and by 2% at $s = 30$. When is the allocation worth arguing about?
+3. **Stretch.** The FOC rearranges to $x + c \, x^{1/3} = s$. Write a [bisection search](https://en.wikipedia.org/wiki/Bisection_method) (Ch. 3.1) that solves it and confirm it matches Optim and Ipopt.
+
+## Next session {background-color="orange"}
+
+1. [Julia, optimization, and a static reservoir]{.gray}
+2. **The Bellman equation on a discrete state**: the stock links the years, the unknown is a function, and on a grid a function is a vector
+3. Continuous state: finite and infinite horizon

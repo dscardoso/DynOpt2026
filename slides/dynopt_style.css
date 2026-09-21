@@ -1,0 +1,35 @@
+/*-- scss:defaults --*/
+$presentation-h1-font-size:	2.5em !default;
+$presentation-h2-font-size:	1.6em !default;
+$presentation-h3-font-size:	1.3em !default;
+$presentation-h4-font-size:	1em !default;
+$presentation-block-margin:	12px !default;
+$presentation-slide-text-align:	left !default;
+$presentation-font-size-root:	28px !default;
+$presentation-font-smaller:	0.7 !default;
+$presentation-line-height:	1.3 !default;
+
+/*-- scss:rules --*/
+
+.small_text {
+    font-size: smaller;
+}
+
+.source {
+    text-align: right !important;
+    font-size: smaller;
+    color: #555;
+}
+
+
+.red {
+    color: #c22;
+}
+
+.gray {
+    color: #666;
+}
+
+.blue {
+    color: rgb(42, 42, 200);
+}
