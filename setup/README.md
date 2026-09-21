@@ -38,6 +38,9 @@ A new browser tab opens and shows a black screen with setup log messages. The Co
 
 When it is ready you see the VS Code editor: a file tree on the left with `exercises`, `slides`, `solutions`, and `setup`, and a welcome tab in the middle.
 
+Two messages you can ignore. When the Codespace opens, GitHub may tell you that you do not have write access to the repository and that your changes would need to go to a fork. That is expected: you are not supposed to push anything, and your edits still stay in your Codespace. VS Code may also show pop-ups in the bottom right suggesting things to install, such as juliaup or other extensions. Everything the workshop needs is already installed, so close those pop-ups and do not install anything.
+
+
 ## Step 3: Run the smoke test
 
 The smoke test is a short script that checks Julia, the packages, and the solver. Run it once before the first session.
