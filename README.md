@@ -41,7 +41,7 @@ Project.toml  the Julia environment; Manifest.toml pins every package version
 
 ## Sources
 
-- Miranda and Fackler, *Applied Computational Economics and Finance*, MIT Press, Chapter 7, for the reservoir model and its calibration
+- Miranda and Fackler, *Applied Computational Economics and Finance*, MIT Press, Chapters 7--9 
 - [JuMP documentation](https://jump.dev/JuMP.jl/stable/), in particular the tutorials [Getting started with Julia](https://jump.dev/JuMP.jl/stable/tutorials/getting_started/getting_started_with_julia/) and [Getting started with JuMP](https://jump.dev/JuMP.jl/stable/tutorials/getting_started/getting_started_with_JuMP/)
 - [Julia documentation](https://docs.julialang.org/)
 
