@@ -81,7 +81,7 @@ end
 
 ## What this part is not
 
-This part will teach you to program
+This part will **NOT** teach you how to program
 
 . . .
 
